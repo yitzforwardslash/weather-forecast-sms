@@ -45,8 +45,8 @@ Have a great day tomorrow! 🌟
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/weather-sms-automation.git
-   cd weather-sms-automation
+   git clone https://github.com/yourusername/weather-forecast-sms.git
+   cd weather-forecast-sms
    ```
 
 2. **Install dependencies**
@@ -106,7 +106,7 @@ python weather_sms_github.py
 #### Linux/Mac Cron
 ```bash
 # Run daily at 10 PM
-0 22 * * * cd /path/to/weather-sms-automation && python weather_sms_github.py
+0 22 * * * cd /path/to/weather-forecast-sms && python weather_sms_github.py
 ```
 
 ## ☁️ Cloud Deployment
@@ -130,7 +130,7 @@ See `SCHEDULING_GUIDE.md` for detailed cloud deployment instructions.
 ## 📁 File Structure
 
 ```
-weather-sms-automation/
+weather-forecast-sms/
 ├── weather_sms_github.py      # Main script with environment variables
 ├── requirements.txt           # Python dependencies
 ├── SCHEDULING_GUIDE.md       # Detailed deployment guide
