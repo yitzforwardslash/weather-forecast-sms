@@ -1,0 +1,33 @@
+name: Daily Weather SMS
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 10 PM EST = 2 AM UTC (adjust for your timezone)
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  send-weather-sms:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Send Weather SMS
+      env:
+        OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+        TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+        TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+        TWILIO_FROM_NUMBER: ${{ secrets.TWILIO_FROM_NUMBER }}
+      run: |
+        python weather_sms_github.py
