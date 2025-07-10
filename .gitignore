@@ -103,6 +103,11 @@ weather_sms_log.txt
 tomorrow_weather_sms_scheduled.py
 run_weather_sms.bat
 
+# Test files with sensitive data
+test_*.py
+*_test.py
+test/
+
 # Windows
 Thumbs.db
 ehthumbs.db

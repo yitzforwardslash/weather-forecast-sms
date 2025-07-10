@@ -4,18 +4,17 @@ Tomorrow's Weather SMS Script (GitHub Version)
 Gets tomorrow's weather forecast for zip code 10977 and sends it via SMS.
 Uses environment variables for API keys for security.
 """
-
 import os
-import sys
 import requests
 from datetime import datetime, timedelta
 from twilio.rest import Client
+from openai import OpenAI
 
 # Configuration
-ZIP_CODE = "10977"
+ZIP_CODE = "YOUR_ZIP_CODE"  # Replace with your zip code
 PHONE_NUMBERS = [
-    "+18453216547",  # Replace with your actual phone numbers
-    "+18451234567",  # Add more numbers as needed
+    "+1234567890",  # Replace with your actual phone numbers
+    "+0987654321"   # Add more numbers as needed
 ]
 
 def get_coordinates_from_zip(zip_code, api_key):
@@ -53,12 +52,12 @@ def get_tomorrow_weather(zip_code):
         # First, get coordinates from zip code
         location_info = get_coordinates_from_zip(zip_code, api_key)
         
-        # Use One Call API 3.0 - include daily forecast
+        # Use One Call API 3.0 - include daily and hourly forecast
         onecall_url = "https://api.openweathermap.org/data/3.0/onecall"
         params = {
             'lat': location_info['lat'],
             'lon': location_info['lon'],
-            'exclude': 'minutely,hourly,alerts',  # Get current and daily
+            'exclude': 'minutely,alerts',  # Get current, daily, and hourly
             'appid': api_key,
             'units': 'imperial'  # For Fahrenheit
         }
@@ -72,6 +71,20 @@ def get_tomorrow_weather(zip_code):
         
         # Calculate tomorrow's date
         tomorrow_date = datetime.now() + timedelta(days=1)
+        tomorrow_start = tomorrow_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        tomorrow_end = tomorrow_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        
+        # Extract hourly data for tomorrow only
+        tomorrow_hourly = []
+        for hour_data in data['hourly']:
+            hour_time = datetime.fromtimestamp(hour_data['dt'])
+            if tomorrow_start <= hour_time <= tomorrow_end:
+                tomorrow_hourly.append({
+                    'time': hour_time,
+                    'pop': hour_data.get('pop', 0) * 100,  # Probability of precipitation
+                    'rain': hour_data.get('rain', {}).get('1h', 0),  # Rain in mm
+                    'weather': hour_data['weather'][0]['main']
+                })
         
         weather_info = {
             'location': location_info['name'],
@@ -86,7 +99,8 @@ def get_tomorrow_weather(zip_code):
             'description': tomorrow['weather'][0]['description'].title(),
             'wind_speed': tomorrow['wind_speed'],
             'pop': round(tomorrow['pop'] * 100),  # Probability of precipitation
-            'uv_index': round(tomorrow['uvi'])
+            'uv_index': round(tomorrow['uvi']),
+            'hourly_rain': tomorrow_hourly  # Hourly rain data for AI analysis
         }
         
         return weather_info
@@ -95,6 +109,50 @@ def get_tomorrow_weather(zip_code):
         raise Exception(f"Error fetching weather data: {e}")
     except KeyError as e:
         raise Exception(f"Unexpected weather data format: {e}")
+
+
+def analyze_rain_forecast(hourly_rain):
+    """Use OpenAI to get a concise summary of the rain forecast from hourly data."""
+    import os
+    openai_api_key = os.environ.get('OPENAI_API_KEY')
+    if not openai_api_key:
+        raise ValueError("OPENAI_API_KEY environment variable not set")
+
+    # Create HTTP client that bypasses SSL verification
+    import httpx
+    http_client = httpx.Client(verify=False)
+    openai_client = OpenAI(api_key=openai_api_key, http_client=http_client)
+
+    # Prepare data string for OpenAI prompt
+    rain_data = "".join(
+        f"{entry['time'].strftime('%I:%M %p')}: Rain: {entry['rain']}mm - Chance: {entry['pop']}%\n"
+        for entry in hourly_rain if entry['rain'] > 0
+    )
+
+    if not rain_data:
+        return ""  # No rain expected
+
+    # Compose prompt
+    prompt = (
+        "You are a weather analyst. Given the hourly rain data, produce a short forecast describing "
+        "the expected rain periods. Just the rain times in short, 'always indicating when it will start until when it will end' (e.g. Light rain expected from 10 AM until 11:30 AM and heavy rain after 8 PM until the end of the day). This will be used for SMS notifications"
+        "Please summarize the rain situation concisely."
+    )
+
+    # Call OpenAI to generate the summary
+    try:
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": rain_data}
+            ],
+            max_tokens=200
+        )
+        summary = response.choices[0].message.content.strip()
+        return summary
+    except Exception as e:
+        raise Exception(f"Error during AI analysis: {e}")
 
 def format_tomorrow_weather_message(weather_info):
     """Format tomorrow's weather information into a readable SMS message with emojis."""
@@ -105,12 +163,10 @@ def format_tomorrow_weather_message(weather_info):
     if weather_info['pop'] > 0:
         precipitation_text = f"🌧️ Rain chance: {weather_info['pop']}%\n"
     
-    # Add UV index warning if high
-    uv_text = ""
-    if weather_info['uv_index'] >= 6:
-        uv_text = f"☀️ UV Index: {weather_info['uv_index']} (High - use sunscreen)\n"
-    elif weather_info['uv_index'] >= 3:
-        uv_text = f"☀️ UV Index: {weather_info['uv_index']} (Moderate)\n"
+    # Add AI rain summary if available
+    rain_summary_text = ""
+    if weather_info.get('rain_summary'):
+        rain_summary_text = f"🌦️ Rain Forecast: {weather_info['rain_summary']}\n"
     
     # SMS message WITH emojis (this is what recipients will see)
     message = f"""🌤️ Tomorrow's Weather for {weather_info['location']}
@@ -121,7 +177,7 @@ def format_tomorrow_weather_message(weather_info):
 📝 Conditions: {weather_info['description']}
 💧 Humidity: {weather_info['humidity']}%
 💨 Wind: {weather_info['wind_speed']} mph
-{precipitation_text}{uv_text}
+{precipitation_text}{rain_summary_text}
 🌅 Morning: {weather_info['morning_temp']}°F
 ☀️ Afternoon: {weather_info['day_temp']}°F
 🌆 Evening: {weather_info['evening_temp']}°F
@@ -134,6 +190,7 @@ Have a great day tomorrow! 🌟"""
 def send_sms(message, phone_numbers):
     """Send SMS using Twilio API."""
     # Get Twilio credentials from environment variables
+    import os
     account_sid = os.environ.get('TWILIO_ACCOUNT_SID')
     auth_token = os.environ.get('TWILIO_AUTH_TOKEN')
     from_number = os.environ.get('TWILIO_FROM_NUMBER')
@@ -177,6 +234,19 @@ def main():
         weather_info = get_tomorrow_weather(ZIP_CODE)
         
         print(f"Tomorrow's weather for {weather_info['location']}: {weather_info['high_temp']}F/{weather_info['low_temp']}F, {weather_info['description']}")
+        
+        # Generate AI rain analysis if there's rain data
+        rain_summary = ""
+        if weather_info['hourly_rain']:
+            print("Analyzing rain forecast with AI...")
+            try:
+                rain_summary = analyze_rain_forecast(weather_info['hourly_rain'])
+                if rain_summary:
+                    print(f"AI Rain Analysis: {rain_summary}")
+            except Exception as e:
+                print(f"Warning: Could not generate AI rain analysis: {e}")
+        
+        weather_info['rain_summary'] = rain_summary
         
         print("Formatting message...")
         message = format_tomorrow_weather_message(weather_info)
