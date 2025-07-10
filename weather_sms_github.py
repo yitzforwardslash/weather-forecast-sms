@@ -14,9 +14,8 @@ from twilio.rest import Client
 # Configuration
 ZIP_CODE = "10977"
 PHONE_NUMBERS = [
-    "+18452632763",  # Replace with your actual phone numbers
-    "+18456599232",  # Add more numbers as needed
-    "+18455218163",
+    "+18453216547",  # Replace with your actual phone numbers
+    "+18451234567",  # Add more numbers as needed
 ]
 
 def get_coordinates_from_zip(zip_code, api_key):
